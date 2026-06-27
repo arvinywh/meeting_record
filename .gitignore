@@ -1,0 +1,32 @@
+# 环境变量（含密钥，不提交）
+.env
+
+# Python 虚拟环境
+.venv/
+venv/
+env/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+
+# 模型缓存与二进制
+bin/
+*.pt
+*.pth
+*.onnx
+
+# Playwright
+.playwright-mcp/
+
+# 会议记录（本地数据，不提交）
+records/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

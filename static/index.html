@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>面试录音助手</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f6fa; color: #2d3436; }
+
+  .container { max-width: 860px; margin: 0 auto; padding: 32px 16px; }
+
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 24px; }
+  h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #636e72; text-transform: uppercase; letter-spacing: .05em; }
+
+  .card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+  .setup { display: flex; gap: 12px; }
+  .setup input { flex: 1; border: 1px solid #dfe6e9; border-radius: 8px; padding: 10px 14px; font-size: 14px; outline: none; }
+  .setup input:focus { border-color: #6c5ce7; }
+
+  .record-area { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 12px 0; }
+
+  #recordBtn {
+    width: 88px; height: 88px; border-radius: 50%; border: none; cursor: pointer;
+    font-size: 32px; background: #6c5ce7; color: #fff;
+    box-shadow: 0 4px 16px rgba(108,92,231,.4);
+    transition: transform .15s, background .2s;
+  }
+  #recordBtn:hover { transform: scale(1.06); }
+  #recordBtn.recording { background: #d63031; box-shadow: 0 4px 16px rgba(214,48,49,.4); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+
+  #timer { font-size: 28px; font-weight: 700; letter-spacing: .08em; color: #2d3436; }
+  #timer.recording { color: #d63031; }
+
+  #status { text-align: center; font-size: 14px; color: #636e72; min-height: 20px; }
+  #status.error { color: #d63031; }
+
+  .progress-bar { width: 100%; height: 4px; background: #dfe6e9; border-radius: 2px; overflow: hidden; display: none; }
+  .progress-bar .fill { height: 100%; background: #6c5ce7; animation: indeterminate 1.4s infinite; }
+  @keyframes indeterminate { 0%{transform:translateX(-100%)} 100%{transform:translateX(300%)} }
+
+  .segment { padding: 10px 0; border-bottom: 1px solid #f0f0f0; line-height: 1.6; }
+  .segment:last-child { border-bottom: none; }
+  .speaker { font-weight: 600; color: #6c5ce7; margin-right: 6px; font-size: 13px; }
+  .speaker.B { color: #00b894; }
+  .speaker.C { color: #e17055; }
+
+  #analysisContent { white-space: pre-wrap; line-height: 1.75; font-size: 14px; }
+  #analysisContent h2, #analysisContent h3 { font-size: 15px; font-weight: 600; margin: 14px 0 6px; }
+  #analysisContent ul, #analysisContent ol { padding-left: 20px; }
+  #analysisContent li { margin-bottom: 4px; }
+
+  .actions { display: flex; gap: 10px; margin-top: 16px; }
+  .btn { padding: 10px 20px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: #6c5ce7; color: #fff; }
+  .btn-secondary { background: #dfe6e9; color: #2d3436; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  #recordsList { list-style: none; }
+  #recordsList li { padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; color: #636e72; }
+  #recordsList li:last-child { border-bottom: none; }
+
+  .hidden { display: none !important; }
+
+  .tab-btn { padding: 8px 20px; border-radius: 20px; border: 1px solid #dfe6e9; background: #fff; font-size: 14px; font-weight: 600; cursor: pointer; color: #636e72; transition: all .15s; }
+  .tab-btn.active { background: #6c5ce7; color: #fff; border-color: #6c5ce7; }
+
+  .upload-area {
+    border: 2px dashed #dfe6e9; border-radius: 12px; padding: 40px 20px;
+    text-align: center; cursor: pointer; transition: border-color .2s, background .2s;
+  }
+  .upload-area:hover, .upload-area.drag-over { border-color: #6c5ce7; background: #f8f7ff; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>面试录音助手</h1>
+
+  <!-- 基本信息 -->
+  <div class="card">
+    <h2>面试信息</h2>
+    <div class="setup">
+      <input id="company" type="text" placeholder="公司名称（如：字节跳动）">
+      <input id="position" type="text" placeholder="应聘岗位（如：后端工程师）">
+    </div>
+  </div>
+
+  <!-- 录音控制 -->
+  <div class="card">
+    <!-- 模式切换 -->
+    <div style="display:flex;gap:8px;margin-bottom:20px;">
+      <button class="tab-btn active" id="tabRecord" onclick="switchTab('record')">实时录音</button>
+      <button class="tab-btn" id="tabUpload" onclick="switchTab('upload')">上传文件</button>
+    </div>
+
+    <!-- 实时录音面板 -->
+    <div id="panelRecord">
+      <div class="record-area">
+        <button id="recordBtn" title="点击开始录音">&#9679;</button>
+        <span id="timer">00:00</span>
+        <p id="status">点击按钮开始录音</p>
+        <div class="progress-bar" id="progressBar"><div class="fill"></div></div>
+      </div>
+    </div>
+
+    <!-- 上传文件面板 -->
+    <div id="panelUpload" class="hidden">
+      <div class="upload-area" id="uploadArea">
+        <div style="font-size:36px;margin-bottom:8px;">&#128228;</div>
+        <p style="font-weight:600;margin-bottom:4px;">拖拽或点击选择录音文件</p>
+        <p style="font-size:13px;color:#636e72;">支持 MP3、MP4、WAV、M4A、WebM 等格式</p>
+        <input type="file" id="fileInput" accept="audio/*,video/*" style="display:none">
+      </div>
+      <p id="uploadStatus" style="text-align:center;font-size:14px;color:#636e72;margin-top:12px;"></p>
+      <div class="progress-bar" id="progressBar2"><div class="fill"></div></div>
+    </div>
+  </div>
+
+  <!-- 转录结果 -->
+  <div class="card hidden" id="transcriptCard">
+    <h2>转录文字</h2>
+    <div id="transcriptContent"></div>
+    <div class="actions">
+      <button class="btn btn-primary" id="analyzeBtn">DeepSeek 分析</button>
+    </div>
+  </div>
+
+  <!-- 分析结果 -->
+  <div class="card hidden" id="analysisCard">
+    <h2>面试分析</h2>
+    <div id="analysisContent"></div>
+    <div class="actions">
+      <button class="btn btn-primary" id="saveBtn">保存记录</button>
+      <button class="btn btn-secondary" id="newBtn">新建录音</button>
+    </div>
+  </div>
+
+  <!-- 历史记录 -->
+  <div class="card">
+    <h2>历史记录</h2>
+    <ul id="recordsList"><li>加载中...</li></ul>
+  </div>
+</div>
+
+<script>
+let mediaRecorder = null;
+let audioChunks = [];
+let timerInterval = null;
+let seconds = 0;
+let currentSegments = [];
+let currentAnalysis = "";
+
+const recordBtn = document.getElementById("recordBtn");
+const timerEl = document.getElementById("timer");
+const statusEl = document.getElementById("status");
+const progressBar = document.getElementById("progressBar");
+
+// 录音
+recordBtn.addEventListener("click", async () => {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+});
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = handleRecordingStop;
+    mediaRecorder.start(1000);
+
+    recordBtn.classList.add("recording");
+    recordBtn.innerHTML = "&#9632;";
+    timerEl.classList.add("recording");
+    setStatus("录音中...");
+    startTimer();
+  } catch (e) {
+    setStatus("无法访问麦克风：" + e.message, true);
+  }
+}
+
+function stopRecording() {
+  mediaRecorder.stop();
+  mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  clearInterval(timerInterval);
+  recordBtn.classList.remove("recording");
+  recordBtn.innerHTML = "&#9679;";
+  timerEl.classList.remove("recording");
+}
+
+async function handleRecordingStop() {
+  setStatus("上传中，请稍候...");
+  showProgress(true);
+
+  const blob = new Blob(audioChunks, { type: "audio/webm" });
+  const form = new FormData();
+  form.append("audio", blob, "recording.webm");
+
+  try {
+    const res = await fetch("/api/transcribe", { method: "POST", body: form });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const data = await res.json();
+    currentSegments = data.segments;
+    renderTranscript(data.segments, data.full_text);
+    showProgress(false);
+    setStatus("转录完成，可点击「DeepSeek 分析」继续");
+  } catch (e) {
+    showProgress(false);
+    setStatus("转录失败：" + e.message, true);
+  }
+}
+
+function renderTranscript(segments, fullText) {
+  const el = document.getElementById("transcriptContent");
+  if (segments.length === 0) {
+    el.innerHTML = `<p style="color:#636e72">${fullText || "（无内容）"}</p>`;
+  } else {
+    el.innerHTML = segments.map(s => {
+      const letter = s.speaker.replace("说话人", "");
+      return `<div class="segment"><span class="speaker ${letter}">${s.speaker}</span>${s.text}</div>`;
+    }).join("");
+  }
+  document.getElementById("transcriptCard").classList.remove("hidden");
+}
+
+// DeepSeek 分析
+document.getElementById("analyzeBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("analyzeBtn");
+  btn.disabled = true;
+  btn.textContent = "分析中...";
+  showProgress(true);
+  setStatus("正在调用 DeepSeek 分析...");
+
+  const form = new FormData();
+  form.append("segments", JSON.stringify(currentSegments));
+  form.append("company", document.getElementById("company").value);
+  form.append("position", document.getElementById("position").value);
+
+  try {
+    const res = await fetch("/api/analyze", { method: "POST", body: form });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const data = await res.json();
+    currentAnalysis = data.analysis;
+    renderAnalysis(data.analysis);
+    showProgress(false);
+    setStatus("分析完成");
+  } catch (e) {
+    showProgress(false);
+    setStatus("分析失败：" + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "DeepSeek 分析";
+  }
+});
+
+function renderAnalysis(text) {
+  // 简单 Markdown 渲染
+  const html = text
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
+    .replace(/\n\n/g, "<br><br>");
+  document.getElementById("analysisContent").innerHTML = html;
+  document.getElementById("analysisCard").classList.remove("hidden");
+}
+
+// 保存
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("saveBtn");
+  btn.disabled = true;
+  btn.textContent = "保存中...";
+
+  const form = new FormData();
+  form.append("segments", JSON.stringify(currentSegments));
+  form.append("analysis_text", currentAnalysis);
+  form.append("company", document.getElementById("company").value);
+  form.append("position", document.getElementById("position").value);
+
+  try {
+    const res = await fetch("/api/save", { method: "POST", body: form });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const data = await res.json();
+    setStatus("已保存：" + data.path);
+    loadRecords();
+  } catch (e) {
+    setStatus("保存失败：" + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "保存记录";
+  }
+});
+
+// 新建录音
+document.getElementById("newBtn").addEventListener("click", () => {
+  currentSegments = [];
+  currentAnalysis = "";
+  seconds = 0;
+  timerEl.textContent = "00:00";
+  document.getElementById("transcriptCard").classList.add("hidden");
+  document.getElementById("analysisCard").classList.add("hidden");
+  document.getElementById("transcriptContent").innerHTML = "";
+  document.getElementById("analysisContent").innerHTML = "";
+  setStatus("点击按钮开始录音");
+});
+
+// 历史记录
+async function loadRecords() {
+  const res = await fetch("/api/records");
+  const list = await res.json();
+  const el = document.getElementById("recordsList");
+  if (list.length === 0) {
+    el.innerHTML = "<li>暂无记录</li>";
+  } else {
+    el.innerHTML = list.map(r => `<li>${r.name}</li>`).join("");
+  }
+}
+
+// 工具函数
+function startTimer() {
+  seconds = 0;
+  timerInterval = setInterval(() => {
+    seconds++;
+    const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+    const s = String(seconds % 60).padStart(2, "0");
+    timerEl.textContent = `${m}:${s}`;
+  }, 1000);
+}
+
+function setStatus(msg, isError = false) {
+  statusEl.textContent = msg;
+  statusEl.className = isError ? "error" : "";
+}
+
+function showProgress(show) {
+  progressBar.style.display = show ? "block" : "none";
+}
+
+// 模式切换
+function switchTab(tab) {
+  document.getElementById("tabRecord").classList.toggle("active", tab === "record");
+  document.getElementById("tabUpload").classList.toggle("active", tab === "upload");
+  document.getElementById("panelRecord").classList.toggle("hidden", tab !== "record");
+  document.getElementById("panelUpload").classList.toggle("hidden", tab !== "upload");
+}
+
+// 上传文件逻辑
+const uploadArea = document.getElementById("uploadArea");
+const fileInput = document.getElementById("fileInput");
+const uploadStatus = document.getElementById("uploadStatus");
+const progressBar2 = document.getElementById("progressBar2");
+
+uploadArea.addEventListener("click", () => fileInput.click());
+
+uploadArea.addEventListener("dragover", e => { e.preventDefault(); uploadArea.classList.add("drag-over"); });
+uploadArea.addEventListener("dragleave", () => uploadArea.classList.remove("drag-over"));
+uploadArea.addEventListener("drop", e => {
+  e.preventDefault();
+  uploadArea.classList.remove("drag-over");
+  const file = e.dataTransfer.files[0];
+  if (file) handleUploadFile(file);
+});
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) handleUploadFile(fileInput.files[0]);
+});
+
+async function handleUploadFile(file) {
+  uploadStatus.textContent = `已选择：${file.name}（${(file.size / 1024 / 1024).toFixed(1)} MB），转录中...`;
+  progressBar2.style.display = "block";
+
+  const form = new FormData();
+  form.append("audio", file, file.name);
+
+  try {
+    const res = await fetch("/api/transcribe", { method: "POST", body: form });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const data = await res.json();
+    currentSegments = data.segments;
+    renderTranscript(data.segments, data.full_text);
+    progressBar2.style.display = "none";
+    uploadStatus.textContent = "转录完成，可点击「DeepSeek 分析」继续";
+  } catch (e) {
+    progressBar2.style.display = "none";
+    uploadStatus.textContent = "转录失败：" + e.message;
+    uploadStatus.style.color = "#d63031";
+  }
+}
+
+loadRecords();
+</script>
+</body>
+</html>
