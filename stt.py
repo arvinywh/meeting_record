@@ -1,13 +1,32 @@
 import os
+import platform
+import shutil
 import subprocess
 from pathlib import Path
 
-# 优先使用项目 bin 目录内的 ffmpeg，避免依赖系统 PATH
-_FFMPEG = str(Path(__file__).parent / "bin" / "ffmpeg.exe")
-if not Path(_FFMPEG).exists():
-    _FFMPEG = "ffmpeg"  # 回退到系统 PATH
+BASE_DIR = Path(__file__).resolve().parent
 
 _model = None
+
+
+def _find_ffmpeg() -> str:
+    """查找项目内或系统中的 FFmpeg，兼容 Windows、macOS 和 Linux。"""
+    executable = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    bundled = BASE_DIR / "bin" / executable
+    if bundled.is_file() and os.access(bundled, os.X_OK):
+        return str(bundled)
+
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return system_ffmpeg
+
+    if platform.system() == "Darwin":
+        install_hint = "请先执行 `brew install ffmpeg`"
+    elif os.name == "nt":
+        install_hint = "请安装 FFmpeg 并将其加入 PATH，或放到项目的 bin 目录"
+    else:
+        install_hint = "请使用系统包管理器安装 FFmpeg"
+    raise RuntimeError(f"未找到 FFmpeg，{install_hint}")
 
 
 def _get_model():
@@ -29,12 +48,22 @@ def _to_wav(input_path: str) -> str:
     output_path = str(Path(input_path).with_suffix(".wav"))
     if input_path == output_path:
         return output_path
-    subprocess.run(
-        [_FFMPEG, "-y", "-i", input_path, "-ar", "16000", "-ac", "1", output_path],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    command = [
+        _find_ffmpeg(), "-y", "-i", input_path,
+        "-ar", "16000", "-ac", "1", output_path,
+    ]
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        Path(output_path).unlink(missing_ok=True)
+        detail = (exc.stderr or "未知错误").strip().splitlines()[-1]
+        raise RuntimeError(f"FFmpeg 音频转换失败：{detail}") from exc
     return output_path
 
 
@@ -52,13 +81,13 @@ def transcribe(audio_path: str) -> dict:
     }
     """
     wav_path = _to_wav(audio_path)
-    model = _get_model()
-
-    result = model.generate(input=wav_path, batch_size_s=300)
-
-    # 清理临时 wav（如果是转换来的）
-    if wav_path != audio_path and os.path.exists(wav_path):
-        os.remove(wav_path)
+    try:
+        model = _get_model()
+        result = model.generate(input=wav_path, batch_size_s=300)
+    finally:
+        # 模型加载或识别失败时也要清理转换产生的临时文件。
+        if wav_path != audio_path:
+            Path(wav_path).unlink(missing_ok=True)
 
     if not result:
         return {"full_text": "", "segments": []}

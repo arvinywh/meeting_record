@@ -168,11 +168,24 @@ recordBtn.addEventListener("click", async () => {
 });
 
 async function startRecording() {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    setStatus("当前浏览器不支持录音，请使用最新版 Safari 或 Chrome", true);
+    return;
+  }
+
+  let stream = null;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioChunks = [];
-    mediaRecorder = new MediaRecorder(stream);
-    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    // Safari 通常使用 MP4，Chrome/Edge 通常使用 WebM；以浏览器实际支持为准。
+    const mimeTypes = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
+    const mimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
+    mediaRecorder = mimeType
+      ? new MediaRecorder(stream, { mimeType })
+      : new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
     mediaRecorder.onstop = handleRecordingStop;
     mediaRecorder.start(1000);
 
@@ -182,6 +195,7 @@ async function startRecording() {
     setStatus("录音中...");
     startTimer();
   } catch (e) {
+    if (stream) stream.getTracks().forEach(t => t.stop());
     setStatus("无法访问麦克风：" + e.message, true);
   }
 }
@@ -199,9 +213,13 @@ async function handleRecordingStop() {
   setStatus("上传中，请稍候...");
   showProgress(true);
 
-  const blob = new Blob(audioChunks, { type: "audio/webm" });
+  const mimeType = mediaRecorder.mimeType || audioChunks[0]?.type || "audio/webm";
+  const extension = mimeType.includes("mp4") ? "m4a"
+    : mimeType.includes("ogg") ? "ogg"
+    : "webm";
+  const blob = new Blob(audioChunks, { type: mimeType });
   const form = new FormData();
-  form.append("audio", blob, "recording.webm");
+  form.append("audio", blob, `recording.${extension}`);
 
   try {
     const res = await fetch("/api/transcribe", { method: "POST", body: form });

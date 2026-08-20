@@ -10,13 +10,15 @@ from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
+BASE_DIR = Path(__file__).resolve().parent
+
 app = FastAPI(title="面试录音助手")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
 @app.get("/")
 def index():
-    return FileResponse("static/index.html")
+    return FileResponse(BASE_DIR / "static" / "index.html")
 
 
 @app.post("/api/transcribe")
